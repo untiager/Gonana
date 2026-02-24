@@ -41,6 +41,7 @@ Gonana est un outil en ligne de commande développé en Go pour analyser automat
 
 ### Compilation
 ```bash
+    make
 ```
 
 ##  Utilisation
