@@ -4,7 +4,7 @@ BINARY_NAME=Gonana
 BUILD_DIR=build
 
 build:
-	go build -o $(BUILD_DIR)/$(BINARY_NAME) .
+	go build -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/gonana
 
 test:
 	go test -v ./...
