@@ -1,5 +1,9 @@
 # Gonana - Vérificateur de Style Epitech
 
+[![Tests](https://github.com/untiager/Gonana/actions/workflows/test.yml/badge.svg)](https://github.com/untiager/Gonana/actions/workflows/test.yml)
+[![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)](https://go.dev/)
+[![Coverage](https://img.shields.io/badge/coverage-89.3%25-brightgreen)](https://github.com/untiager/Gonana)
+
 Gonana est un outil en ligne de commande développé en Go pour analyser automatiquement la conformité des fichiers C (.c) et headers (.h) avec la norme de style Epitech.
 
 ## Fonctionnalités
@@ -153,15 +157,41 @@ Gonana/
 - `C-F4` : Maximum 4 paramètres
 - `C-L5` : Pas de déclaration dans les boucles
 
+## 🔧 Développement
+
+### Tests
+Le projet dispose d'une suite de tests complète avec **89.3%** de couverture :
+```bash
+# Lancer les tests
+make test
+
+# Avec couverture
+go test -cover
+
+# Avec rapport détaillé
+go test -v -coverprofile=coverage.out
+go tool cover -html=coverage.out
+```
+
+### CI/CD
+Une GitHub Action automatique exécute les tests à chaque push et pull request :
+- Exécution de tous les tests
+- Vérification de la couverture (minimum 85%)
+- Compilation du projet
+- Linter (golangci-lint)
+
+Les pushs sont automatiquement rejetés si les tests échouent ou si la couverture descend sous 85%.
+
 ## License
 
 Ce projet est sous licence MIT. Voir le fichier `LICENSE` pour plus de détails.
 
-##  Roadmap
+## Roadmap
 
+- [x] Tests unitaires complets (89.3% coverage)
+- [x] Intégration CI/CD (GitHub Actions)
 - [ ] Option `--fix` pour corrections automatiques
 - [ ] Support des fichiers de configuration
-- [ ] Intégration CI/CD
 - [ ] Plugin VSCode
 - [ ] Interface web
 - [ ] Métriques de complexité
