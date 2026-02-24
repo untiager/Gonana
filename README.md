@@ -2,7 +2,7 @@
 
 [![Tests](https://github.com/untiager/Gonana/actions/workflows/test.yml/badge.svg)](https://github.com/untiager/Gonana/actions/workflows/test.yml)
 [![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)](https://go.dev/)
-[![Coverage](https://img.shields.io/badge/coverage-89.3%25-brightgreen)](https://github.com/untiager/Gonana)
+[![Coverage](https://img.shields.io/badge/coverage-89.2%25-brightgreen)](https://github.com/untiager/Gonana)
 
 Gonana est un outil en ligne de commande développé en Go pour analyser automatiquement la conformité des fichiers C (.c) et headers (.h) avec la norme de style Epitech.
 
@@ -33,6 +33,8 @@ Gonana est un outil en ligne de commande développé en Go pour analyser automat
 -  Score global de conformité
 -  Sortie JSON pour automatisation
 -  Interface colorée et intuitive
+-  **Correction automatique** des violations détectées
+-  Mode aperçu (dry-run) pour voir les changements avant application
 
 ## Installation
 
@@ -42,6 +44,37 @@ Gonana est un outil en ligne de commande développé en Go pour analyser automat
 ### Compilation
 ```bash
     make
+```
+
+## 🧪 Tests et Développement
+
+### Lancer les tests
+```bash
+# Exécuter tous les tests
+make test
+
+# Exécuter les tests avec rapport de couverture
+make coverage
+
+# Générer un rapport HTML de couverture
+make coverage-html
+```
+
+### Statistiques de tests
+- **179 tests** au total (incluant tous les sous-tests)
+- **89.2%** de couverture de code
+- Tous les modules critiques testés (analyzer, fixer, rules, reporter)
+
+### Autres commandes
+```bash
+# Formater le code
+make format
+
+# Nettoyer les artifacts de build
+make clean
+
+# Installer globalement
+make install
 ```
 
 ##  Utilisation
@@ -57,6 +90,8 @@ Gonana [options] <fichier_ou_dossier>
 - `-json` : Sortie au format JSON
 - `-silent` : Mode silencieux (code de retour uniquement)
 - `-level` : Niveau de vérification (1=base, 2=avancé)
+- `-fix` : Corriger automatiquement les violations détectées
+- `-dry-run` : Afficher les corrections possibles sans les appliquer
 
 ### Exemples d'utilisation
 
@@ -73,7 +108,67 @@ Gonana -json -level 2 projet/
 # Mode silencieux pour scripts
 Gonana -silent fichier.c
 echo $?  # 0 = succès, 1 = violations détectées
+
+# Voir les corrections possibles sans les appliquer
+Gonana --dry-run fichier.c
+
+# Corriger automatiquement les violations
+Gonana --fix fichier.c
+
+# Corriger tous les fichiers d'un projet
+Gonana --fix src/
 ```
+
+## 🔧 Correction Automatique
+
+Gonana peut corriger automatiquement plusieurs types de violations :
+
+### Violations Corrigeables
+- **C-L2** : Suppression des lignes vides en début/fin de fichier et lignes vides consécutives
+- **C-L3** : Conversion des espaces en tabulations pour l'indentation
+- **C-L4** : Séparation des déclarations multiples de variables sur plusieurs lignes
+- **C-L5** : Extraction des déclarations de variables hors des boucles for
+- **C-C1** : Conversion des commentaires `//` en `/* */`
+- **C-O1** : Renommage des fichiers en snake_case (avec confirmation)
+
+### Mode Aperçu (--dry-run)
+Avant d'appliquer les corrections, vous pouvez voir ce qui serait modifié :
+
+```bash
+$ Gonana --dry-run test.c
+
+test.c
+  Would fix [C-L2] Line 1: Removed empty line at beginning of file
+  Would fix [C-L3] Line 5: Replaced 4 spaces with 1 tabs
+  Would fix [C-L4] Line 10: Split multiple variable declarations into 3 lines
+  Would fix [C-C1] Line 15: Converted // comment to /* */
+
+Summary:
+  Files processed: 1
+  Fixes available: 4
+
+Run with --fix to apply these changes
+```
+
+### Mode Correction (--fix)
+Applique automatiquement toutes les corrections possibles :
+
+```bash
+$ Gonana --fix test.c
+
+Summary:
+  Files processed: 1
+  Files modified: 1
+  Total fixes applied: 4
+
+✓ Auto-fix complete
+```
+
+### Workflow Recommandé
+1. Analyser les violations : `Gonana fichier.c`
+2. Voir les corrections disponibles : `Gonana --dry-run fichier.c`
+3. Appliquer les corrections : `Gonana --fix fichier.c`
+4. Vérifier le résultat : `Gonana fichier.c`
 
 ##  Format de Sortie
 

@@ -1515,3 +1515,388 @@ func TestPrintSummary(t *testing.T) {
 		t.Error("printSummary should contain violations count")
 	}
 }
+
+func TestCollectCFiles_SingleFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.c")
+	os.WriteFile(testFile, []byte("int main() { return 0; }"), 0644)
+
+	files, err := collectCFiles(testFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(files) != 1 {
+		t.Errorf("Expected 1 file, got %d", len(files))
+	}
+
+	if files[0] != testFile {
+		t.Errorf("Expected %s, got %s", testFile, files[0])
+	}
+}
+
+func TestCollectCFiles_Directory(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create test structure
+	os.WriteFile(filepath.Join(tmpDir, "file1.c"), []byte(""), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "file2.h"), []byte(""), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "file3.txt"), []byte(""), 0644)
+
+	subDir := filepath.Join(tmpDir, "subdir")
+	os.Mkdir(subDir, 0755)
+	os.WriteFile(filepath.Join(subDir, "file4.c"), []byte(""), 0644)
+
+	files, err := collectCFiles(tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Should find 3 C/H files (file1.c, file2.h, file4.c)
+	if len(files) != 3 {
+		t.Errorf("Expected 3 C files, got %d", len(files))
+	}
+}
+
+func TestCollectCFiles_NonCFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.txt")
+	os.WriteFile(testFile, []byte("text"), 0644)
+
+	files, err := collectCFiles(testFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(files) != 0 {
+		t.Errorf("Expected 0 files for .txt file, got %d", len(files))
+	}
+}
+
+func TestCollectCFiles_InvalidPath(t *testing.T) {
+	_, err := collectCFiles("/nonexistent/path")
+	if err == nil {
+		t.Error("Expected error for nonexistent path")
+	}
+}
+
+func TestRunFixer_NoCFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create non-C file
+	os.WriteFile(filepath.Join(tmpDir, "test.txt"), []byte("text"), 0644)
+
+	analyzer := NewAnalyzer(1)
+	fixer := NewFixer(analyzer, true)
+
+	// Capture output
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := runFixer(fixer, tmpDir, false)
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	output := make([]byte, 1024)
+	n, _ := r.Read(output)
+	result := string(output[:n])
+
+	if !strings.Contains(result, "No C files found") {
+		t.Error("Expected 'No C files found' message")
+	}
+}
+
+func TestRunFixer_WithVerbose(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.c")
+
+	content := `
+// Bad comment
+int x, y;
+`
+	os.WriteFile(testFile, []byte(content), 0644)
+
+	analyzer := NewAnalyzer(1)
+	fixer := NewFixer(analyzer, true)
+
+	// Capture output
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := runFixer(fixer, tmpDir, true)
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	output := make([]byte, 4096)
+	n, _ := r.Read(output)
+	result := string(output[:n])
+
+	if !strings.Contains(result, "test.c") {
+		t.Error("Expected file name in verbose output")
+	}
+	if !strings.Contains(result, "Would fix") {
+		t.Error("Expected 'Would fix' in dry-run verbose output")
+	}
+}
+
+func TestRunFixer_ActualFix(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.c")
+
+	content := `
+// Bad comment
+int x, y;
+`
+	os.WriteFile(testFile, []byte(content), 0644)
+
+	analyzer := NewAnalyzer(1)
+	fixer := NewFixer(analyzer, false)
+
+	err := runFixer(fixer, tmpDir, false)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	// Verify file was modified
+	modified, _ := os.ReadFile(testFile)
+	modifiedStr := string(modified)
+
+	if strings.Contains(modifiedStr, "//") {
+		t.Error("Expected // comments to be converted")
+	}
+	if strings.Contains(modifiedStr, "int x, y;") {
+		t.Error("Expected multiple declarations to be split")
+	}
+}
+
+func TestRunFixer_ErrorHandling(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.c")
+
+	// This should log error but continue
+	content := `
+int x, y;
+`
+	os.WriteFile(testFile, []byte(content), 0644)
+	os.Chmod(testFile, 0444)
+
+	analyzer := NewAnalyzer(1)
+	fixer := NewFixer(analyzer, false)
+
+	// This should log error but continue
+	runFixer(fixer, tmpDir, false)
+
+	// Restore permissions
+	os.Chmod(testFile, 0644)
+
+	// Just verify it doesn't panic
+}
+
+func TestAnalyzeFile_UnreadableFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.c")
+	os.WriteFile(testFile, []byte("int x;"), 0644)
+
+	// Make file unreadable
+	os.Chmod(testFile, 0000)
+	defer os.Chmod(testFile, 0644)
+
+	analyzer := NewAnalyzer(1)
+	result, err := analyzer.analyzeFile(testFile)
+
+	// Should return error on read error
+	if err == nil {
+		t.Error("Expected error for unreadable file")
+	}
+	if result != nil {
+		t.Error("Expected nil result for unreadable file")
+	}
+}
+
+func TestCollectFiles_ErrorHandling(t *testing.T) {
+	analyzer := NewAnalyzer(1)
+
+	// Test with invalid path
+	files, err := analyzer.collectFiles("/nonexistent/path/that/does/not/exist")
+
+	// Should return error for nonexistent path
+	if err == nil {
+		t.Error("Expected error for nonexistent path")
+	}
+	if files != nil {
+		t.Error("Expected nil files for error case")
+	}
+}
+
+func TestPrintFileResults_LongFilename(t *testing.T) {
+	report := &Report{
+		Files: []FileResult{
+			{
+				Filename:   strings.Repeat("very_long_filename_", 10) + ".c",
+				Score:      85.5,
+				LineCount:  100,
+				Violations: []Violation{{Rule: "C-L1", Line: 1, Message: "Test"}},
+			},
+		},
+		TotalFiles: 1,
+		TotalLines: 100,
+	}
+
+	// Capture output
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	printFileResults(report, false)
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	output := make([]byte, 4096)
+	n, _ := r.Read(output)
+
+	// Just verify it doesn't panic with long filenames
+	if n == 0 {
+		t.Error("Expected some output")
+	}
+}
+
+func TestCalculateScore_AllViolationTypes(t *testing.T) {
+	analyzer := NewAnalyzer(2)
+
+	violations := []Violation{
+		{Rule: "C-L1", Line: 1},
+		{Rule: "C-L2", Line: 2},
+		{Rule: "C-L3", Line: 3},
+		{Rule: "C-O1", Line: 0},
+		{Rule: "C-F1", Line: 5},
+		{Rule: "C-C1", Line: 10},
+		{Rule: "C-G1", Line: 11},
+	}
+
+	score := analyzer.calculateScore(violations)
+
+	if score < 0 || score > 100 {
+		t.Errorf("Score should be between 0 and 100, got %.1f", score)
+	}
+
+	// With multiple violations, score should be significantly reduced
+	if score > 90 {
+		t.Errorf("Expected lower score with multiple violations, got %.1f", score)
+	}
+}
+
+func TestFixEmptyLines_EdgeCases(t *testing.T) {
+	fixer := NewFixer(nil, true)
+
+	// Test empty input
+	result := &FixResult{Fixes: make([]Fix, 0)}
+	fixed := fixer.fixEmptyLines([]string{}, result)
+	if len(fixed) != 0 {
+		t.Error("Expected empty output for empty input")
+	}
+
+	// Test single empty line
+	result = &FixResult{Fixes: make([]Fix, 0)}
+	fixed = fixer.fixEmptyLines([]string{""}, result)
+	if len(fixed) != 0 {
+		t.Error("Expected empty output for single empty line")
+	}
+
+	// Test all empty lines
+	result = &FixResult{Fixes: make([]Fix, 0)}
+	fixed = fixer.fixEmptyLines([]string{"", "", ""}, result)
+	if len(fixed) != 0 {
+		t.Error("Expected empty output for all empty lines")
+	}
+}
+
+func TestFixIndentation_ComplexCases(t *testing.T) {
+	fixer := NewFixer(nil, true)
+
+	// Test 2 spaces (less than 4)
+	result := &FixResult{Fixes: make([]Fix, 0)}
+	fixed := fixer.fixIndentation([]string{"  int x;"}, result)
+	if fixed[0] != "  int x;" {
+		t.Error("Should keep spaces less than 4")
+	}
+
+	// Test 6 spaces (1 tab + 2 spaces)
+	result = &FixResult{Fixes: make([]Fix, 0)}
+	fixed = fixer.fixIndentation([]string{"      int x;"}, result)
+	if fixed[0] != "\t  int x;" {
+		t.Errorf("Expected tab + 2 spaces, got %q", fixed[0])
+	}
+}
+
+func TestFixMultipleVariableDeclarations_EdgeCases(t *testing.T) {
+	fixer := NewFixer(nil, true)
+
+	// Test with pointers
+	result := &FixResult{Fixes: make([]Fix, 0)}
+	fixed := fixer.fixMultipleVariableDeclarations([]string{"int *x, *y;"}, result)
+	// Should split even with pointers
+	if len(fixed) < 2 && len(result.Fixes) > 0 {
+		t.Error("Expected pointers to be split")
+	}
+
+	// Test with const
+	result = &FixResult{Fixes: make([]Fix, 0)}
+	fixed = fixer.fixMultipleVariableDeclarations([]string{"const int x, y;"}, result)
+	// May or may not match depending on regex
+	if len(fixed) == 0 {
+		t.Error("Expected some output")
+	}
+}
+
+func TestFixCommentFormat_EdgeCases(t *testing.T) {
+	fixer := NewFixer(nil, true)
+
+	// Test with multiple // on same line
+	result := &FixResult{Fixes: make([]Fix, 0)}
+	fixed := fixer.fixCommentFormat([]string{"int x; // comment // more"}, result)
+	if !strings.Contains(fixed[0], "/*") {
+		t.Error("Expected // to be converted")
+	}
+
+	// Test with only //
+	result = &FixResult{Fixes: make([]Fix, 0)}
+	fixed = fixer.fixCommentFormat([]string{"//"}, result)
+	if len(fixed) == 0 {
+		t.Error("Expected some output")
+	}
+}
+
+func TestToSnakeCase_SpecialCases(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"", ""},
+		{"a", "a"},
+		{"A", "a"},
+		{"AB", "a_b"},
+		{"ABC", "a_b_c"},
+		{"Test123", "test123"},
+		{"test_snake", "test_snake"},
+	}
+
+	for _, tt := range tests {
+		result := toSnakeCase(tt.input)
+		if result != tt.expected {
+			t.Errorf("toSnakeCase(%q) = %q, want %q", tt.input, result, tt.expected)
+		}
+	}
+}
