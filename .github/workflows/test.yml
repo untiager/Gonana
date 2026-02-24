@@ -26,12 +26,14 @@ jobs:
         path: |
           ~/.cache/go-build
           ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.mod') }}
         restore-keys: |
           ${{ runner.os }}-go-
+      continue-on-error: true
           
     - name: Download dependencies
       run: go mod download
+      continue-on-error: true
       
     - name: Run tests
       run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
@@ -40,12 +42,15 @@ jobs:
       run: |
         coverage=$(go tool cover -func=coverage.out | grep total | awk '{print $3}')
         echo "Test coverage: ${coverage}"
-        # Extract numeric value and compare
+        # Extract numeric value for comparison
         coverage_num=$(echo $coverage | sed 's/%//')
-        if (( $(echo "$coverage_num >= 85.0" | awk '{print ($1 >= $2)}') == 1 )); then
-          echo "✅ Coverage ${coverage} meets the 85% requirement"
+        threshold=85.0
+        # Use awk for proper float comparison
+        result=$(awk -v cov="$coverage_num" -v thresh="$threshold" 'BEGIN {print (cov >= thresh) ? "pass" : "fail"}')
+        if [ "$result" = "pass" ]; then
+          echo "✅ Coverage ${coverage} meets the ${threshold}% requirement"
         else
-          echo "❌ Coverage ${coverage} is below the required 85%"
+          echo "❌ Coverage ${coverage} is below the required ${threshold}%"
           exit 1
         fi
         
